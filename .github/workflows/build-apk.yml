@@ -27,7 +27,26 @@ jobs:
 
       - name: Assemble debug APK
         working-directory: android
-        run: gradle assembleDebug --no-daemon --stacktrace
+        run: gradle assembleDebug --no-daemon --stacktrace 2>&1 | tee /tmp/gradle.log
+
+      - name: Report Gradle failure
+        if: failure()
+        run: |
+          echo "::group::Full Gradle log"
+          cat /tmp/gradle.log
+          echo "::endgroup::"
+          grep -m 20 -E "^e: |error:|FAILURE:|^\* What went wrong|Caused by:" /tmp/gradle.log > /tmp/gradle.err || true
+          if [ -s /tmp/gradle.err ]; then
+            while IFS= read -r line; do
+              escaped=$(echo "$line" | sed 's/%/%25/g; s/\r/%0D/g; s/\n/%0A/g')
+              echo "::error::${escaped}"
+            done < /tmp/gradle.err
+          else
+            tail -n 20 /tmp/gradle.log | while IFS= read -r line; do
+              escaped=$(echo "$line" | sed 's/%/%25/g; s/\r/%0D/g; s/\n/%0A/g')
+              echo "::error::${escaped}"
+            done
+          fi
 
       - name: Name the APK
         run: |
