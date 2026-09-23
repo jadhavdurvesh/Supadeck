@@ -41,7 +41,7 @@ fun SqlScreen(vm: AdminViewModel) {
         )
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(
-                "Read-only, one statement, 15 second limit",
+                "Read-only — enforced by Supabase, not just this app",
                 Modifier.weight(1f),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -53,10 +53,8 @@ fun SqlScreen(vm: AdminViewModel) {
             Box(Modifier.weight(1f)) {
                 LoadView(result, onRetry = { vm.runSql(query) }) { grid ->
                     Column(Modifier.fillMaxSize()) {
-                        val truncated = if (grid.hasMore) ", showing the first 500" else ""
-                        val time = grid.note?.let { ", $it" } ?: ""
                         Text(
-                            "${grid.rows.size} rows$time$truncated",
+                            "${grid.rows.size} rows",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

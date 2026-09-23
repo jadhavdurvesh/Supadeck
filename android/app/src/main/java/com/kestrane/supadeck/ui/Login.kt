@@ -15,6 +15,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -34,10 +36,8 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun LoginScreen(vm: AdminViewModel) {
     var url by rememberSaveable { mutableStateOf(vm.savedUrl) }
-    var key by rememberSaveable { mutableStateOf(vm.savedKey) }
-    var email by rememberSaveable { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    val ready = url.isNotBlank() && key.isNotBlank() && email.isNotBlank() && password.isNotBlank() && !vm.loginBusy
+    var token by remember { mutableStateOf("") }
+    val ready = url.isNotBlank() && token.isNotBlank() && !vm.connectBusy
 
     Column(
         Modifier
@@ -56,7 +56,7 @@ fun LoginScreen(vm: AdminViewModel) {
             color = MaterialTheme.colorScheme.primary,
         )
         Text(
-            "Sign in with the admin account of your Supabase project.",
+            "Connect directly to your Supabase project — no backend to deploy.",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(8.dp))
@@ -70,38 +70,36 @@ fun LoginScreen(vm: AdminViewModel) {
             modifier = Modifier.fillMaxWidth(),
         )
         OutlinedTextField(
-            value = key,
-            onValueChange = { key = it },
-            label = { Text("Anon or publishable key") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        OutlinedTextField(
-            value = email,
-            onValueChange = { email = it },
-            label = { Text("Email") },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-            modifier = Modifier.fillMaxWidth(),
-        )
-        OutlinedTextField(
-            value = password,
-            onValueChange = { password = it },
-            label = { Text("Password") },
+            value = token,
+            onValueChange = { token = it },
+            label = { Text("Personal access token") },
+            placeholder = { Text("sbp_...") },
             singleLine = true,
             visualTransformation = PasswordVisualTransformation(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
             modifier = Modifier.fillMaxWidth(),
         )
-        vm.loginError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
+            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    "This token controls your whole Supabase account, not just this project.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    "Create one at supabase.com/dashboard/account/tokens. It's stored encrypted on this device only.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        vm.connectError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         Button(
-            onClick = { vm.signIn(url, key, email, password) },
+            onClick = { vm.connect(url, token) },
             enabled = ready,
             modifier = Modifier.fillMaxWidth().height(48.dp),
         ) {
-            if (vm.loginBusy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Text("Sign in")
+            if (vm.connectBusy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Text("Connect")
         }
-        Spacer(Modifier.height(24.dp))
         Text(
             "Made by Kestrane, a DMJ Group company",
             modifier = Modifier.fillMaxWidth(),

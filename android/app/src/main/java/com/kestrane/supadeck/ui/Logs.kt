@@ -42,7 +42,6 @@ fun LogsScreen(vm: AdminViewModel) {
         }
         LoadView(vm.logs, onRetry = { vm.loadLogs(force = true) }) { r ->
             when {
-                !r.configured -> Note("Logs are optional. Add the MGMT_ACCESS_TOKEN secret to the admin-api function to turn them on.")
                 r.error != null -> Note(r.error, error = true)
                 r.lines.isEmpty() -> Note("No log lines in the last hour.")
                 else -> LazyColumn(Modifier.fillMaxSize()) {

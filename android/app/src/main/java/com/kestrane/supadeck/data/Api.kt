@@ -1,109 +1,119 @@
 package com.kestrane.supadeck.data
 
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
 class ApiException(message: String, val code: Int) : Exception(message)
-class SessionExpired : Exception("Session expired")
 
 /**
- * Talks to exactly two things: Supabase Auth (sign in / refresh) and your `admin-api` Edge Function.
+ * Talks directly to the Supabase Management API (api.supabase.com) using a personal access
+ * token. No backend of ours sits in between — the token itself carries full account privileges,
+ * the same as the SQL Editor in the Supabase dashboard.
  */
 class Api(private val store: Store) {
-    private val http = OkHttpClient.Builder().callTimeout(40, TimeUnit.SECONDS).build()
+    private val http = OkHttpClient.Builder()
+        .callTimeout(40, TimeUnit.SECONDS)
+        .build()
     private val jsonType = "application/json".toMediaType()
-    private val refreshLock = Mutex()
 
-    val isSignedIn: Boolean
-        get() = store.refreshToken.isNotBlank() && store.projectUrl.isNotBlank()
+    val isSignedIn: Boolean get() = store.isSignedIn
 
-    suspend fun signIn(url: String, anonKey: String, email: String, password: String) {
-        val base = url.trim().trimEnd('/')
-        val key = anonKey.trim()
+    fun connect(projectUrl: String, token: String) {
+        val base = projectUrl.trim().trimEnd('/')
         require(base.startsWith("https://")) { "Project URL must start with https://" }
-        val res = send(
-            "$base/auth/v1/token?grant_type=password",
-            JSONObject().put("email", email.trim()).put("password", password),
-            key,
-            null,
-        )
-        saveSession(base, key, res)
+        require(token.trim().isNotBlank()) { "Personal access token is required" }
+        store.projectUrl = base
+        store.accessToken = token.trim()
     }
 
-    fun signOut() = store.clearSession()
+    fun signOut() = store.clear()
 
-    /** Calls one action on the admin-api function, refreshing the session when needed. */
-    suspend fun call(action: String, params: JSONObject = JSONObject()): JSONObject {
-        if (System.currentTimeMillis() / 1000 > store.expiresAt - 60) refresh(store.accessToken)
-        val body = JSONObject(params.toString()).put("action", action)
-        val used = store.accessToken
-        return try {
-            invoke(body)
-        } catch (e: ApiException) {
-            if (e.code != 401) throw e
-            refresh(used)
-            invoke(body)
+    /**
+     * Runs one SQL statement via the Management API's database query endpoint and returns the
+     * result rows. Defaults to read-only (the same guarantee the SQL tab always had) — pass
+     * readOnly = false only for the one write action the app performs (ban/unban).
+     */
+    suspend fun sql(query: String, readOnly: Boolean = true): List<JSONObject> = withContext(Dispatchers.IO) {
+        val ref = store.projectRef
+        val url = "https://api.supabase.com/v1/projects/$ref/database/query"
+        val body = JSONObject().put("query", query).put("read_only", readOnly)
+        val request = Request.Builder()
+            .url(url)
+            .header("Authorization", "Bearer ${store.accessToken}")
+            .post(body.toString().toRequestBody(jsonType))
+            .build()
+        http.newCall(request).execute().use { r ->
+            val text = r.body?.string().orEmpty()
+            if (!r.isSuccessful) throw ApiException(errorMessage(text, r.code), r.code)
+            parseRows(text)
         }
     }
 
-    private suspend fun invoke(body: JSONObject): JSONObject =
-        send("${store.projectUrl}/functions/v1/admin-api", body, store.anonKey, store.accessToken)
-
-    private suspend fun refresh(stale: String) = refreshLock.withLock {
-        if (store.accessToken != stale) return@withLock // another call already refreshed
-        try {
-            val res = send(
-                "${store.projectUrl}/auth/v1/token?grant_type=refresh_token",
-                JSONObject().put("refresh_token", store.refreshToken),
-                store.anonKey,
-                null,
-            )
-            saveSession(store.projectUrl, store.anonKey, res)
-        } catch (e: ApiException) {
-            if (e.code in 400..499) {
-                store.clearSession()
-                throw SessionExpired()
+    /** Recent log lines for one Supabase log source, via the Management API's analytics endpoint. */
+    suspend fun logs(source: String, limit: Int): LogsResult = withContext(Dispatchers.IO) {
+        val ref = store.projectRef
+        val end = System.currentTimeMillis()
+        val start = end - 60 * 60 * 1000
+        val query = "select id, timestamp, event_message from $source order by timestamp desc limit $limit"
+        val url = "https://api.supabase.com/v1/projects/$ref/analytics/endpoints/logs.all"
+            .toHttpUrl()
+            .newBuilder()
+            .addQueryParameter("sql", query)
+            .addQueryParameter("iso_timestamp_start", isoUtc(start))
+            .addQueryParameter("iso_timestamp_end", isoUtc(end))
+            .build()
+        val request = Request.Builder()
+            .url(url)
+            .header("Authorization", "Bearer ${store.accessToken}")
+            .get()
+            .build()
+        http.newCall(request).execute().use { r ->
+            val text = r.body?.string().orEmpty()
+            if (!r.isSuccessful) return@withContext LogsResult(true, emptyList(), errorMessage(text, r.code))
+            val json = runCatching { JSONObject(text) }.getOrNull() ?: return@withContext LogsResult(true, emptyList(), "Unexpected response")
+            val rows = json.optJSONArray("result").mapObjects {
+                val ts = it.optLong("timestamp", 0L)
+                LogLine(time = isoUtc(ts / 1000), message = it.str("event_message"))
             }
-            throw e
+            LogsResult(true, rows, null)
         }
     }
 
-    private fun saveSession(url: String, anonKey: String, res: JSONObject) {
-        store.projectUrl = url
-        store.anonKey = anonKey
-        store.accessToken = res.getString("access_token")
-        store.refreshToken = res.getString("refresh_token")
-        store.expiresAt = res.optLong("expires_at", System.currentTimeMillis() / 1000 + res.optLong("expires_in", 3600))
+    private fun parseRows(text: String): List<JSONObject> {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return emptyList()
+        // The endpoint returns a plain JSON array of row objects. Be defensive in case it's
+        // ever wrapped in a { "result": [...] } / { "data": [...] } envelope instead.
+        val direct = runCatching { JSONArray(trimmed) }.getOrNull()
+        if (direct != null) return direct.mapObjects { it }
+        val obj = runCatching { JSONObject(trimmed) }.getOrNull() ?: return emptyList()
+        for (key in listOf("result", "data", "rows")) {
+            obj.optJSONArray(key)?.let { return it.mapObjects { row -> row } }
+        }
+        return emptyList()
     }
 
-    private suspend fun send(url: String, body: JSONObject, apiKey: String, bearer: String?): JSONObject =
-        withContext(Dispatchers.IO) {
-            val request = Request.Builder()
-                .url(url)
-                .header("apikey", apiKey)
-                .also { if (bearer != null) it.header("Authorization", "Bearer $bearer") }
-                .post(body.toString().toRequestBody(jsonType))
-                .build()
-            http.newCall(request).execute().use { r ->
-                val text = r.body?.string().orEmpty()
-                val json = runCatching { JSONObject(text) }.getOrNull()
-                if (!r.isSuccessful) {
-                    val msg = json?.let { j ->
-                        listOf("error_description", "msg", "message", "error")
-                            .map { j.optString(it) }
-                            .firstOrNull { it.isNotBlank() }
-                    }
-                    throw ApiException(msg ?: "HTTP ${r.code}", r.code)
-                }
-                json ?: JSONObject()
-            }
+    private fun errorMessage(body: String, code: Int): String {
+        val json = runCatching { JSONObject(body) }.getOrNull()
+        val msg = json?.let { j ->
+            listOf("message", "error", "msg", "error_description")
+                .map { j.optString(it) }
+                .firstOrNull { it.isNotBlank() }
         }
+        return msg ?: "HTTP $code"
+    }
+}
+
+private fun isoUtc(epochMillis: Long): String {
+    val sdf = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US)
+    sdf.timeZone = java.util.TimeZone.getTimeZone("UTC")
+    return sdf.format(java.util.Date(epochMillis))
 }

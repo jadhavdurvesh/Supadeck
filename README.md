@@ -3,85 +3,63 @@
 Made by Kestrane, a DMJ Group company.
 
 A private Android admin app for your Supabase project: overview and insights, table browser,
-users, a read-only SQL runner and (optionally) logs.
+users, and a SQL runner. There is nothing to deploy — the app talks straight to Supabase.
 
 ```
-Android app  --(your admin login)-->  admin-api Edge Function  -->  Postgres / Auth / Management API
-   (no secrets)                        (holds all privileged keys)
+Android app  --(personal access token)-->  Supabase Management API  -->  your project
 ```
 
-The app never contains your `service_role` key or a Supabase access token. It signs in as you,
-and the Edge Function checks that your user id is on the admin list before doing anything.
+## 1. Get a personal access token
 
-## 1. Deploy the backend (once)
+1. Go to [supabase.com/dashboard/account/tokens](https://supabase.com/dashboard/account/tokens)
+   and generate a new token.
+2. Copy it — it starts with `sbp_` and is shown only once.
 
-**Option A — GitHub Actions (recommended, no local setup):**
+**This token is a master credential for your whole Supabase account** — every project, billing
+included — not just this one project's database. Treat it like your Supabase password:
 
-Add three repo secrets under **Settings → Secrets and variables → Actions → New repository secret**:
+- Don't share this APK or your token with anyone you wouldn't hand your Supabase login to.
+- If your phone is lost or the token leaks, revoke it immediately from the same tokens page.
+- The SQL tab runs queries read-only (enforced by Supabase itself), but the app still has full
+  read access to every table, every schema, and your user list.
 
-| Secret | Value | Where to get it |
-| --- | --- | --- |
-| `SUPABASE_ACCESS_TOKEN` | a personal access token | supabase.com/dashboard/account/tokens → Generate new token |
-| `SUPABASE_PROJECT_REF` | your project ref | the `<ref>` in `https://<ref>.supabase.co`, or Dashboard → Settings → General |
-| `ADMIN_USER_IDS` | your user UUID (comma-separate several) | Dashboard → Authentication → Users → copy the **User UID** |
+## 2. Get the app
 
-Then run the **Deploy Supabase Edge Function** workflow from the Actions tab (or just push a change under `supabase/functions/`). It deploys `admin-api` and sets its `ADMIN_USER_IDS` and `MGMT_ACCESS_TOKEN` secrets for you — the same access token doubles as the Management API token used by the Logs tab.
-
-- The admin account needs **email + password** sign-in. If you normally use OAuth or magic links, create a dedicated admin user in the dashboard with a password.
-- Recommended: Authentication → Sign In / Providers → turn off "Allow new users to sign up".
-
-**Option B — Supabase CLI locally:**
+Either build it yourself in Android Studio (`android/` folder, press Run), or push this repo to
+GitHub and let `.github/workflows/build-apk.yml` build it for you:
 
 ```bash
-# from the repo root, logged in and linked to your project
-supabase functions deploy admin-api --no-verify-jwt
-supabase secrets set ADMIN_USER_IDS=<your-user-uuid>
-supabase secrets set MGMT_ACCESS_TOKEN=<personal-access-token>   # optional, enables the Logs tab
+git tag v1.0.0 && git push origin v1.0.0
 ```
 
-`--no-verify-jwt` is intentional: the function validates the session itself and rejects anyone who isn't on `ADMIN_USER_IDS`.
+The workflow attaches a `Kestrane-SupaDeck-<version>.apk` to a GitHub Release on that tag —
+download it to your phone and install it (Android will ask you to allow installs from your
+browser or file manager the first time).
 
-## 2. Build the app
+## 3. Connect
 
-Option A: open the `android/` folder in Android Studio and press Run.
-Gradle downloads what it needs; if Studio complains about the wrapper, let it use its bundled Gradle 8.9.
+Open the app and enter:
 
-Option B (no computer needed): push this repo to GitHub. The workflow in `.github/workflows/build-apk.yml`
-builds a debug APK on every push to `main` that touches `android/`, and you can also start it by hand
-from the Actions tab. Open the run, download the `kestrane-supadeck-apk` artifact and install the APK.
+- **Project URL** — `https://<ref>.supabase.co`
+- **Personal access token** — the `sbp_...` token from step 1
 
-To get a permanent download link, push a version tag:
-
-```bash
-git tag v0.1.0 && git push origin v0.1.0
-```
-
-The workflow then attaches the APK to a GitHub Release. Android will ask you to allow installs from your browser or file manager the first time.
-
-The app's version name and version code come from the tag itself — no manual editing of `build.gradle.kts` needed. A push to `main` without a tag builds a `0.1.0-dev.<run>+<sha>` version for testing.
-
-## 3. First launch
-
-Enter your Project URL (`https://<ref>.supabase.co`), the anon / publishable key, and the admin
-email and password. The URL and public key are stored encrypted with the Android Keystore,
-along with the session tokens.
+That's it. Both are stored encrypted on-device via the Android Keystore and never sent anywhere
+except `api.supabase.com` and your own project URL.
 
 ## What each tab does
 
-| Tab | What it shows | Where the data comes from |
+| Tab | What it shows | How |
 | --- | --- | --- |
-| Overview | user counts, sign-ups per day, DB size, connections, cache hit, largest tables, storage buckets | SQL inside the function |
-| Tables | every table and view in every schema, row browser with paging, column schema, RLS status | `pg_catalog` + `select` |
-| Users | search, details, ban / unban | `auth.users` + Auth Admin API |
-| SQL | read-only queries, up to 500 rows | transaction set to `READ ONLY`, 15 s timeout |
-| Logs | edge, postgres, auth and function logs from the last hour | Management API (needs `MGMT_ACCESS_TOKEN`) |
+| Overview | user counts, sign-ups per day, DB size, connections, cache hit, largest tables, storage buckets | SQL via the Management API |
+| Tables | every table and view in every schema, row browser with paging, column schema, RLS status | same |
+| Users | search, details, ban / unban | reads and updates `auth.users` directly |
+| SQL | your own queries, run **read-only** | Management API, `read_only: true` |
+| Logs | edge, postgres, auth and function logs from the last hour | Management API logs endpoint |
 
-## Security notes
+## Why no backend?
 
-- Only user ids in `ADMIN_USER_IDS` get any data; everyone else gets 403.
-- The row browser hides password hashes and token columns of `auth.*` tables.
-- SQL runner: one statement, read-only transaction. A lost phone still means your session is on it,
-  so keep a screen lock and use Sign out or revoke the session from the dashboard if it goes missing.
-- Ban / unban are the only write actions. Adding more means adding an action in `index.ts`.
-
-SupaDeck is an independent tool and is not affiliated with or endorsed by Supabase.
+An earlier version of this app used a Supabase Edge Function as a proxy, so the powerful key
+never left a server. This version trades that isolation for simplicity, on request: one token,
+no deployment, works the moment you install it. If you'd rather have that separation back —
+useful if several people will use the app, or you want an audit point between the app and your
+data — say so and it can be rebuilt that way.

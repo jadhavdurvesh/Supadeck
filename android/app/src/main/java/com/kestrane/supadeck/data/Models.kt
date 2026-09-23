@@ -59,38 +59,23 @@ inline fun <T> JSONArray?.mapObjects(f: (JSONObject) -> T): List<T> {
 
 fun JSONObject.str(key: String): String = if (isNull(key)) "" else optString(key)
 fun JSONObject.dbl(key: String): Double = if (isNull(key)) 0.0 else optDouble(key, 0.0)
+fun JSONObject.dblOrNull(key: String): Double? = if (!has(key) || isNull(key)) null else optDouble(key)
 
 private fun cell(v: Any?): String = if (v == null || v == JSONObject.NULL) "NULL" else v.toString()
 
-fun JSONObject.toGrid(): Grid {
-    val names = getJSONArray("columns").let { a -> List(a.length()) { a.getString(it) } }
-    val rows = getJSONArray("rows").mapObjects { r -> names.map { c -> cell(r.opt(c)) } }
-    return Grid(
-        columns = names,
-        rows = rows,
-        hasMore = optBoolean("has_more") || optBoolean("truncated"),
-        note = if (has("ms")) "${optLong("ms")} ms" else null,
-    )
-}
-
-fun JSONObject.toOverview(): Overview {
-    val db = getJSONObject("db")
-    val u = getJSONObject("users")
-    return Overview(
-        dbBytes = db.dbl("db_bytes"),
-        connections = db.optInt("connections"),
-        tables = optInt("tables"),
-        version = db.str("version").substringBefore(" on "),
-        cacheHit = if (isNull("cache_hit")) null else optDouble("cache_hit"),
-        usersTotal = u.optInt("total"),
-        active7d = u.optInt("active_7d"),
-        new24h = u.optInt("new_24h"),
-        signups = getJSONArray("signups").mapObjects { it.str("day") to it.optInt("count") },
-        storage = getJSONArray("storage").mapObjects { Triple(it.str("name"), it.optInt("objects"), it.dbl("bytes")) },
-        topTables = getJSONArray("top_tables").mapObjects {
-            Triple("${it.str("schema")}.${it.str("name")}", it.dbl("bytes"), it.dbl("rows"))
-        },
-    )
+/**
+ * Builds a display grid from raw query result rows. Pass an explicit column order when it's
+ * known (e.g. from a schema lookup); otherwise columns are inferred from the union of keys
+ * across the rows, in first-seen order, which is what the free-form SQL tab uses.
+ */
+fun List<JSONObject>.toGrid(columns: List<String>? = null): Grid {
+    val names = columns ?: run {
+        val seen = LinkedHashSet<String>()
+        forEach { row -> row.keys().forEach { seen.add(it) } }
+        seen.toList()
+    }
+    val rows = map { row -> names.map { c -> cell(row.opt(c)) } }
+    return Grid(columns = names, rows = rows)
 }
 
 fun JSONObject.toUser(): UserRow = UserRow(
@@ -109,3 +94,12 @@ fun JSONObject.toTable(): TableInfo =
     TableInfo(str("schema"), str("name"), str("kind"), optLong("est_rows"), optBoolean("rls"))
 
 fun JSONObject.toColumn(): ColumnInfo = ColumnInfo(str("name"), str("type"), optBoolean("nullable"))
+
+// ---------- SQL building helpers ----------
+// The app builds SQL client-side now (no server-side query builder), so identifiers and
+// literals it splices in itself — schema/table names discovered from earlier queries, ids
+// selected from a list — are escaped here. The free-form SQL tab is the person's own input
+// and is sent as-is, matching what the dashboard's SQL Editor does.
+
+fun quoteIdent(s: String): String = "\"" + s.replace("\"", "\"\"") + "\""
+fun quoteLiteral(s: String): String = "'" + s.replace("'", "''") + "'"

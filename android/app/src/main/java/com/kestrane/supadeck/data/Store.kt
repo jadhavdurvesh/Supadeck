@@ -5,8 +5,12 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 
 /**
- * Keystore-backed encrypted storage for the project URL, the public (anon/publishable) key
- * and the session tokens. No service-role key or management token is ever stored here.
+ * Keystore-backed encrypted storage for the project URL and the Supabase personal access token.
+ *
+ * There is no backend proxy: the app talks to the Supabase Management API directly using this
+ * token. That token is a master credential for the whole Supabase account, not just one
+ * project's database, so it is stored encrypted and never leaves the device except in requests
+ * to api.supabase.com and <project>.supabase.co.
  */
 class Store(context: Context) {
     private val prefs = EncryptedSharedPreferences.create(
@@ -17,28 +21,24 @@ class Store(context: Context) {
         EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
     )
 
+    /** Full project URL, e.g. https://abcd1234.supabase.co */
     var projectUrl: String
         get() = prefs.getString("url", "").orEmpty()
         set(v) = prefs.edit().putString("url", v).apply()
 
-    var anonKey: String
-        get() = prefs.getString("anon", "").orEmpty()
-        set(v) = prefs.edit().putString("anon", v).apply()
-
+    /** Supabase personal access token (starts with sbp_). Full account access — treat as a master password. */
     var accessToken: String
-        get() = prefs.getString("access", "").orEmpty()
-        set(v) = prefs.edit().putString("access", v).apply()
+        get() = prefs.getString("token", "").orEmpty()
+        set(v) = prefs.edit().putString("token", v).apply()
 
-    var refreshToken: String
-        get() = prefs.getString("refresh", "").orEmpty()
-        set(v) = prefs.edit().putString("refresh", v).apply()
+    val isSignedIn: Boolean
+        get() = projectUrl.isNotBlank() && accessToken.isNotBlank()
 
-    /** Access-token expiry, epoch seconds. */
-    var expiresAt: Long
-        get() = prefs.getLong("exp", 0L)
-        set(v) = prefs.edit().putLong("exp", v).apply()
+    /** The project ref is the subdomain of the project URL: https://<ref>.supabase.co */
+    val projectRef: String
+        get() = projectUrl.substringAfter("://").substringBefore(".")
 
-    fun clearSession() {
-        prefs.edit().remove("access").remove("refresh").remove("exp").apply()
+    fun clear() {
+        prefs.edit().remove("url").remove("token").apply()
     }
 }
