@@ -15,26 +15,31 @@ and the Edge Function checks that your user id is on the admin list before doing
 
 ## 1. Deploy the backend (once)
 
-You need the [Supabase CLI](https://supabase.com/docs/guides/cli), logged in and linked to your project.
+**Option A — GitHub Actions (recommended, no local setup):**
+
+Add three repo secrets under **Settings → Secrets and variables → Actions → New repository secret**:
+
+| Secret | Value | Where to get it |
+| --- | --- | --- |
+| `SUPABASE_ACCESS_TOKEN` | a personal access token | supabase.com/dashboard/account/tokens → Generate new token |
+| `SUPABASE_PROJECT_REF` | your project ref | the `<ref>` in `https://<ref>.supabase.co`, or Dashboard → Settings → General |
+| `ADMIN_USER_IDS` | your user UUID (comma-separate several) | Dashboard → Authentication → Users → copy the **User UID** |
+
+Then run the **Deploy Supabase Edge Function** workflow from the Actions tab (or just push a change under `supabase/functions/`). It deploys `admin-api` and sets its `ADMIN_USER_IDS` and `MGMT_ACCESS_TOKEN` secrets for you — the same access token doubles as the Management API token used by the Logs tab.
+
+- The admin account needs **email + password** sign-in. If you normally use OAuth or magic links, create a dedicated admin user in the dashboard with a password.
+- Recommended: Authentication → Sign In / Providers → turn off "Allow new users to sign up".
+
+**Option B — Supabase CLI locally:**
 
 ```bash
-# from the repo root
+# from the repo root, logged in and linked to your project
 supabase functions deploy admin-api --no-verify-jwt
 supabase secrets set ADMIN_USER_IDS=<your-user-uuid>
+supabase secrets set MGMT_ACCESS_TOKEN=<personal-access-token>   # optional, enables the Logs tab
 ```
 
-- `--no-verify-jwt` is intentional: the function validates the session itself and rejects anyone
-  who is not on `ADMIN_USER_IDS`.
-- Your user uuid: Dashboard -> Authentication -> Users -> copy the **User UID**. Separate several with commas.
-- The account needs **email + password** sign-in. If you normally use OAuth or magic links,
-  create a dedicated admin user in the dashboard with a password.
-- Recommended: Authentication -> Sign In / Providers -> turn off "Allow new users to sign up".
-
-Optional, for the Logs tab (a personal access token from supabase.com/dashboard/account/tokens):
-
-```bash
-supabase secrets set MGMT_ACCESS_TOKEN=sbp_xxxxxxxx
-```
+`--no-verify-jwt` is intentional: the function validates the session itself and rejects anyone who isn't on `ADMIN_USER_IDS`.
 
 ## 2. Build the app
 
