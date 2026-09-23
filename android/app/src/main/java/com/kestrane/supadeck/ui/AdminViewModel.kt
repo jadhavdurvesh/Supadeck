@@ -229,7 +229,7 @@ class AdminViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun setLogSource(source: String) {
+    fun selectLogSource(source: String) {
         logSource = source
         loadLogs(force = true)
     }

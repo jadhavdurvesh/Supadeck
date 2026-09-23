@@ -35,7 +35,7 @@ fun LogsScreen(vm: AdminViewModel) {
             Sources.forEach { s ->
                 FilterChip(
                     selected = vm.logSource == s,
-                    onClick = { vm.setLogSource(s) },
+                    onClick = { vm.selectLogSource(s) },
                     label = { Text(s.removeSuffix("_logs")) },
                 )
             }
