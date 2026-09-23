@@ -41,6 +41,8 @@ jobs:
             done
           }
           echo "gradle log has $(wc -l < /tmp/gradle.log) lines"
+          annotate notice "$(grep -n '^e: ' /tmp/gradle.log | head -n 40)"
+          annotate notice "$(grep -n -A3 'What went wrong' /tmp/gradle.log | head -n 60)"
           annotate notice "$(tail -n 40 /tmp/gradle.log)"
           annotate notice "APKS: $(find android -iname '*.apk' 2>/dev/null | tr '\n' ' ')"
           annotate notice "OUTPUTS: $(find android/app/build/outputs -maxdepth 4 2>/dev/null | tr '\n' ' ' || echo NONE)"
