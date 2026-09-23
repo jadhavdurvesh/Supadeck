@@ -32,15 +32,18 @@ jobs:
       - name: Show build output tree
         if: always()
         run: |
-          echo "::group::Gradle log (last 150 lines)"
-          tail -n 150 /tmp/gradle.log || true
-          echo "::endgroup::"
-          echo "::group::Find any APKs"
-          find android -iname "*.apk" 2>/dev/null || true
-          echo "::endgroup::"
-          echo "::group::outputs dir tree"
-          find android/app/build/outputs 2>/dev/null || echo "outputs dir does not exist"
-          echo "::endgroup::"
+          annotate() {
+            local level="$1"; shift
+            printf '%s\n' "$@" | while IFS= read -r line; do
+              [ -z "$line" ] && line="(blank)"
+              esc=$(printf '%s' "$line" | sed 's/%/%25/g; s/\r/%0D/g' | cut -c1-400)
+              echo "::${level}::${esc}"
+            done
+          }
+          echo "gradle log has $(wc -l < /tmp/gradle.log) lines"
+          annotate notice "$(tail -n 40 /tmp/gradle.log)"
+          annotate notice "APKS: $(find android -iname '*.apk' 2>/dev/null | tr '\n' ' ')"
+          annotate notice "OUTPUTS: $(find android/app/build/outputs -maxdepth 4 2>/dev/null | tr '\n' ' ' || echo NONE)"
 
       - name: Report Gradle failure
         if: failure()
