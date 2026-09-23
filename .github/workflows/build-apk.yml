@@ -29,6 +29,19 @@ jobs:
         working-directory: android
         run: gradle assembleDebug --no-daemon --stacktrace 2>&1 | tee /tmp/gradle.log
 
+      - name: Show build output tree
+        if: always()
+        run: |
+          echo "::group::Gradle log (last 150 lines)"
+          tail -n 150 /tmp/gradle.log || true
+          echo "::endgroup::"
+          echo "::group::Find any APKs"
+          find android -iname "*.apk" 2>/dev/null || true
+          echo "::endgroup::"
+          echo "::group::outputs dir tree"
+          find android/app/build/outputs 2>/dev/null || echo "outputs dir does not exist"
+          echo "::endgroup::"
+
       - name: Report Gradle failure
         if: failure()
         run: |
