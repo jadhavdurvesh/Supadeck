@@ -29,48 +29,18 @@ jobs:
         working-directory: android
         run: gradle assembleDebug --no-daemon --stacktrace 2>&1 | tee /tmp/gradle.log
 
-      - name: Show build output tree
-        if: always()
-        run: |
-          annotate() {
-            local level="$1"; shift
-            printf '%s\n' "$@" | while IFS= read -r line; do
-              [ -z "$line" ] && line="(blank)"
-              esc=$(printf '%s' "$line" | sed 's/%/%25/g; s/\r/%0D/g' | cut -c1-400)
-              echo "::${level}::${esc}"
-            done
-          }
-          echo "gradle log has $(wc -l < /tmp/gradle.log) lines"
-          annotate notice "$(grep -n '^e: ' /tmp/gradle.log | head -n 40)"
-          annotate notice "$(grep -n -A3 'What went wrong' /tmp/gradle.log | head -n 60)"
-          annotate notice "$(tail -n 40 /tmp/gradle.log)"
-          annotate notice "APKS: $(find android -iname '*.apk' 2>/dev/null | tr '\n' ' ')"
-          annotate notice "OUTPUTS: $(find android/app/build/outputs -maxdepth 4 2>/dev/null | tr '\n' ' ' || echo NONE)"
-
       - name: Report Gradle failure
         if: failure()
         run: |
-          echo "::group::Full Gradle log"
-          cat /tmp/gradle.log
-          echo "::endgroup::"
           grep -m 20 -E "^e: |error:|FAILURE:|^\* What went wrong|Caused by:" /tmp/gradle.log > /tmp/gradle.err || true
-          if [ -s /tmp/gradle.err ]; then
-            while IFS= read -r line; do
-              escaped=$(echo "$line" | sed 's/%/%25/g; s/\r/%0D/g; s/\n/%0A/g')
-              echo "::error::${escaped}"
-            done < /tmp/gradle.err
-          else
-            tail -n 20 /tmp/gradle.log | while IFS= read -r line; do
-              escaped=$(echo "$line" | sed 's/%/%25/g; s/\r/%0D/g; s/\n/%0A/g')
-              echo "::error::${escaped}"
-            done
-          fi
+          [ -s /tmp/gradle.err ] || tail -n 20 /tmp/gradle.log > /tmp/gradle.err
+          while IFS= read -r line; do
+            esc=$(printf '%s' "$line" | sed 's/%/%25/g; s/\r/%0D/g' | cut -c1-400)
+            echo "::error::${esc}"
+          done < /tmp/gradle.err
 
       - name: Name the APK
         run: |
-          set -x
-          echo "Looking for the built APK..."
-          find android/app/build/outputs -type f -name "*.apk" || true
           mkdir -p dist
           SRC=$(find android/app/build/outputs/apk/debug -type f -name "*.apk" | head -n1)
           if [ -z "$SRC" ]; then
