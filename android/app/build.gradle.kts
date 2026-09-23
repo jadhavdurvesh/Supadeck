@@ -12,8 +12,10 @@ android {
         applicationId = "com.kestrane.supadeck"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        // Set by CI from the pushed tag (e.g. v0.1.1 -> versionName 0.1.1, versionCode = run number).
+        // Local/manual builds fall back to a dev version so `gradle assembleDebug` still works untouched.
+        versionCode = (System.getenv("VERSION_CODE") ?: "1").toIntOrNull() ?: 1
+        versionName = System.getenv("VERSION_NAME") ?: "0.1.0-dev"
     }
 
     buildTypes {

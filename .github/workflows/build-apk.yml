@@ -25,6 +25,17 @@ jobs:
         with:
           gradle-version: "8.9"
 
+      - name: Compute version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VN="${GITHUB_REF_NAME#v}"
+          else
+            VN="0.1.0-dev.${GITHUB_RUN_NUMBER}+${GITHUB_SHA:0:7}"
+          fi
+          echo "VERSION_NAME=$VN" >> "$GITHUB_ENV"
+          echo "VERSION_CODE=$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
+          echo "Building version $VN (code $GITHUB_RUN_NUMBER)"
+
       - name: Assemble debug APK
         working-directory: android
         run: gradle assembleDebug --no-daemon --stacktrace 2>&1 | tee /tmp/gradle.log
@@ -47,7 +58,7 @@ jobs:
             echo "::error::No debug APK found under android/app/build/outputs/apk/debug"
             exit 1
           fi
-          SAFE_REF="$(echo "$GITHUB_REF_NAME" | tr '/' '-')"
+          SAFE_REF="$(echo "${VERSION_NAME:-$GITHUB_REF_NAME}" | tr '/' '-')"
           cp "$SRC" "dist/Kestrane-SupaDeck-${SAFE_REF}.apk"
           ls -la dist
 

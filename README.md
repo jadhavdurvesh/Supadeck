@@ -53,6 +53,8 @@ git tag v0.1.0 && git push origin v0.1.0
 
 The workflow then attaches the APK to a GitHub Release. Android will ask you to allow installs from your browser or file manager the first time.
 
+The app's version name and version code come from the tag itself — no manual editing of `build.gradle.kts` needed. A push to `main` without a tag builds a `0.1.0-dev.<run>+<sha>` version for testing.
+
 ## 3. First launch
 
 Enter your Project URL (`https://<ref>.supabase.co`), the anon / publishable key, and the admin
