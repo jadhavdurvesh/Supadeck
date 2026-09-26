@@ -2,6 +2,10 @@
 
 Made by Kestrane, a DMJ Group company.
 
+This repo holds two separate Android apps: **SupaDeck** (this one, for Supabase) in `android/`,
+and **NeonDeck** (for Neon Postgres) in [`neon/`](neon/README.md). Different backends, same
+one-token-and-go idea. This README covers SupaDeck; see `neon/README.md` for NeonDeck.
+
 A private Android admin app for your Supabase project: overview and insights, table browser,
 users, and a SQL runner. There is nothing to deploy — the app talks straight to Supabase.
 
